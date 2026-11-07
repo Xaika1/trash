@@ -33,6 +33,7 @@ button:disabled {
   cursor: default;
 }
 
+#topbar,
 #toolbar,
 #delete-bar {
   display: flex;
@@ -56,6 +57,84 @@ button:disabled {
   color: #5d6b7c;
 }
 
+#role {
+  color: #5d6b7c;
+}
+
+#share {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+select,
+input {
+  min-height: 38px;
+  padding: 6px 8px;
+  border: 1px solid #c3ccd8;
+  border-radius: 6px;
+  font: inherit;
+}
+
+a {
+  color: #2f6fde;
+}
+
+.page {
+  max-width: 560px;
+  margin: 32px auto;
+  padding: 0 16px;
+}
+
+.page form {
+  display: grid;
+  gap: 10px;
+}
+
+.page label {
+  display: grid;
+  gap: 4px;
+}
+
+.error {
+  color: #c0352b;
+}
+
+.primary {
+  background: #2f6fde;
+  border-color: #2f6fde;
+  color: #fff;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.row input {
+  flex: 1 1 200px;
+}
+
+#list {
+  padding: 0;
+  list-style: none;
+}
+
+#list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid #d5dce5;
+}
+
+#list li a {
+  flex: 1 1 160px;
+  overflow-wrap: anywhere;
+}
+
 #stage {
   flex: 1;
   min-height: 0;
@@ -73,6 +152,7 @@ button:disabled {
   resize: none;
 }
 
+#closed,
 #confirm {
   position: fixed;
   inset: 0;
@@ -83,6 +163,7 @@ button:disabled {
   background: rgb(0 0 0 / 40%);
 }
 
+#closed-box,
 #confirm-box {
   max-width: 360px;
   padding: 16px;

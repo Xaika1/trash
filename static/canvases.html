@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Мои холсты</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="page">
+      <div class="row">
+        <h1>Мои холсты</h1>
+        <span id="user"></span>
+        <button id="logout">Выйти</button>
+      </div>
+      <form id="create" class="row">
+        <input id="title" placeholder="Название холста" maxlength="100" required />
+        <button class="primary" type="submit">Создать</button>
+      </form>
+      <ul id="list"></ul>
+      <p id="empty" hidden>Холстов пока нет. Создайте первый.</p>
+    </main>
+    <script src="/static/canvases.js"></script>
+  </body>
+</html>

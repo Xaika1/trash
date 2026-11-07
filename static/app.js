@@ -18,6 +18,19 @@ const deleteInfo = document.getElementById("delete-info");
 const deleteNext = document.getElementById("delete-next");
 const confirmWindow = document.getElementById("confirm");
 const confirmText = document.getElementById("confirm-text");
+const toolbar = document.getElementById("toolbar");
+const titleText = document.getElementById("title");
+const roleText = document.getElementById("role");
+const sharePanel = document.getElementById("share");
+const accessSelect = document.getElementById("access");
+const closedWindow = document.getElementById("closed");
+const closedText = document.getElementById("closed-text");
+
+const ROLE_NAMES = {
+  owner: "Вы владелец",
+  edit: "Можно редактировать",
+  view: "Только просмотр",
+};
 
 const stage = new Konva.Stage({
   container: "stage",
@@ -36,6 +49,10 @@ const blocksToDelete = new Set();
 const edgesToDelete = new Set();
 
 let socket = null;
+let canvasId = null;
+let shareLink = "";
+let canEdit = false;
+let closed = false;
 let selectedBlock = null;
 let selectedEdge = null;
 let editingBlock = null;
@@ -50,9 +67,15 @@ function send(message) {
   }
 }
 
-function connect() {
+function getSocketAddress() {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
-  socket = new WebSocket(`${protocol}://${location.host}/ws`);
+  const [, page, value] = location.pathname.split("/");
+  const param = page === "share" ? "code" : "canvas";
+  return `${protocol}://${location.host}/ws?${param}=${encodeURIComponent(value)}`;
+}
+
+function connect() {
+  socket = new WebSocket(getSocketAddress());
 
   socket.onopen = () => {
     clearCanvas();
@@ -63,7 +86,15 @@ function connect() {
     handleMessage(event.data);
   };
 
-  socket.onclose = () => {
+  socket.onclose = (event) => {
+    if (event.code === 4401) {
+      location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
+      return;
+    }
+    if (event.code === 4403 || event.code === 4404) {
+      showClosed(closed ? closedText.textContent : "Холст не найден или доступ закрыт");
+      return;
+    }
     statusText.textContent = "Нет связи, переподключаемся…";
     setTimeout(connect, 2000);
   };
@@ -72,6 +103,14 @@ function connect() {
 function handleMessage(message) {
   const parts = message.split(";");
   const command = parts[0];
+
+  if (command === "I") {
+    handleInfo(parts[1], parts.slice(2).join(";"));
+  }
+
+  if (command === "C") {
+    showClosed(parts.slice(1).join(";"));
+  }
 
   if (command === "N") {
     drawBlock({
@@ -106,6 +145,51 @@ function handleMessage(message) {
   if (command === "D") {
     removeEdge(Number(parts[1]));
   }
+}
+
+function handleInfo(name, value) {
+  if (name === "id") {
+    canvasId = Number(value);
+  }
+  if (name === "title") {
+    titleText.textContent = value;
+    document.title = value;
+  }
+  if (name === "role") {
+    setRole(value);
+  }
+  if (name === "access") {
+    accessSelect.value = value;
+  }
+  if (name === "link") {
+    shareLink = `${location.origin}${value}`;
+  }
+}
+
+function setRole(role) {
+  canEdit = role !== "view";
+  roleText.textContent = ROLE_NAMES[role];
+  toolbar.hidden = !canEdit;
+  sharePanel.hidden = role !== "owner";
+
+  if (!canEdit) {
+    finishEditing();
+    clearSelection();
+    if (deleteMode) {
+      stopDeleteMode();
+    }
+  }
+
+  for (const block of blocks.values()) {
+    block.group.draggable(canEdit && !deleteMode);
+  }
+  stage.size({ width: stageBox.clientWidth, height: stageBox.clientHeight });
+}
+
+function showClosed(reason) {
+  closed = true;
+  closedText.textContent = reason;
+  closedWindow.hidden = false;
 }
 
 function clearCanvas() {
@@ -152,7 +236,7 @@ function drawBlock(data) {
     oldBlock.group.destroy();
   }
 
-  const group = new Konva.Group({ x: data.x, y: data.y, draggable: !deleteMode });
+  const group = new Konva.Group({ x: data.x, y: data.y, draggable: canEdit && !deleteMode });
   const block = { ...data, group };
   blocks.set(block.id, block);
 
@@ -178,7 +262,7 @@ function drawBlock(data) {
   });
 
   group.on("dblclick dbltap", () => {
-    if (!deleteMode) {
+    if (canEdit && !deleteMode) {
       startEditing(block.id);
     }
   });
@@ -412,6 +496,9 @@ function finishLink(event) {
 }
 
 function clickBlock(id) {
+  if (!canEdit) {
+    return;
+  }
   if (deleteMode) {
     toggle(blocksToDelete, id);
     paintBlock(blocks.get(id));
@@ -427,6 +514,9 @@ function clickBlock(id) {
 }
 
 function clickEdge(id) {
+  if (!canEdit) {
+    return;
+  }
   if (deleteMode) {
     toggle(edgesToDelete, id);
     paintEdge(edges.get(id));
@@ -566,7 +656,7 @@ function finishEditing() {
 }
 
 function startDeleteMode() {
-  if (deleteMode) {
+  if (deleteMode || !canEdit) {
     return;
   }
 
@@ -590,7 +680,7 @@ function stopDeleteMode() {
   stage.size({ width: stageBox.clientWidth, height: stageBox.clientHeight });
 
   for (const block of blocks.values()) {
-    block.group.draggable(true);
+    block.group.draggable(canEdit);
     paintBlock(block);
   }
   for (const edge of edges.values()) {
@@ -634,6 +724,9 @@ function zoom(factor, x, y) {
 }
 
 function addBlock(type) {
+  if (!canEdit) {
+    return;
+  }
   const scale = stage.scaleX();
   const centerX = (stage.width() / 2 - stage.x()) / scale;
   const centerY = (stage.height() / 2 - stage.y()) / scale;
@@ -654,6 +747,23 @@ deleteNext.addEventListener("click", askConfirmation);
 
 document.getElementById("confirm-no").addEventListener("click", () => {
   confirmWindow.hidden = true;
+});
+
+accessSelect.addEventListener("change", async () => {
+  await fetch(`/api/canvases/${canvasId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ access: Number(accessSelect.value) }),
+  });
+});
+
+document.getElementById("copy").addEventListener("click", async () => {
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(shareLink);
+    statusText.textContent = "Ссылка скопирована";
+  } else {
+    prompt("Скопируйте ссылку", shareLink);
+  }
 });
 
 document.getElementById("zoom-in").addEventListener("click", () => {

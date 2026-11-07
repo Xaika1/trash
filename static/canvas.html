@@ -8,15 +8,29 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <div id="toolbar">
+    <div id="topbar">
+      <a href="/" id="back">← Мои холсты</a>
+      <strong id="title"></strong>
+      <span id="role"></span>
+      <span id="share" hidden>
+        <select id="access">
+          <option value="0">Ссылка закрыта</option>
+          <option value="1">По ссылке: только смотреть</option>
+          <option value="2">По ссылке: редактировать</option>
+        </select>
+        <button id="copy">Копировать ссылку</button>
+      </span>
+      <button id="zoom-out">−</button>
+      <button id="zoom-in">+</button>
+      <span id="status">Подключение…</span>
+    </div>
+
+    <div id="toolbar" hidden>
       <button data-type="1">Начало/конец</button>
       <button data-type="2">Процесс</button>
       <button data-type="3">Решение</button>
       <button data-type="4">Данные</button>
       <button id="delete">Удалить</button>
-      <button id="zoom-out">−</button>
-      <button id="zoom-in">+</button>
-      <span id="status">Подключение…</span>
     </div>
 
     <div id="delete-bar" hidden>
@@ -27,6 +41,13 @@
 
     <div id="stage"></div>
     <textarea id="editor" maxlength="1000" hidden></textarea>
+
+    <div id="closed" hidden>
+      <div id="closed-box">
+        <p id="closed-text"></p>
+        <a href="/">К моим холстам</a>
+      </div>
+    </div>
 
     <div id="confirm" hidden>
       <div id="confirm-box">

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Вход</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="page">
+      <h1 id="heading">Вход</h1>
+      <form id="form">
+        <label>
+          Логин
+          <input id="login" autocomplete="username" required maxlength="32" />
+        </label>
+        <label>
+          Пароль
+          <input id="password" type="password" autocomplete="current-password" required />
+        </label>
+        <label id="confirm-row" hidden>
+          Повторите пароль
+          <input id="password-confirm" type="password" autocomplete="new-password" />
+        </label>
+        <p id="error" class="error"></p>
+        <button id="submit" class="primary" type="submit">Войти</button>
+      </form>
+      <p>
+        <a href="#" id="switch">Нет аккаунта? Зарегистрироваться</a>
+      </p>
+    </main>
+    <script src="/static/login.js"></script>
+  </body>
+</html>
