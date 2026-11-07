@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Блок-схема</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div id="toolbar">
+      <button data-type="1">Начало/конец</button>
+      <button data-type="2">Процесс</button>
+      <button data-type="3">Решение</button>
+      <button data-type="4">Данные</button>
+      <button id="delete">Удалить</button>
+      <button id="zoom-out">−</button>
+      <button id="zoom-in">+</button>
+      <span id="status">Подключение…</span>
+    </div>
+
+    <div id="delete-bar" hidden>
+      <span id="delete-info"></span>
+      <button id="delete-next" disabled>Удалить выбранное</button>
+      <button id="delete-cancel">Отмена</button>
+    </div>
+
+    <div id="stage"></div>
+    <textarea id="editor" maxlength="1000" hidden></textarea>
+
+    <div id="confirm" hidden>
+      <div id="confirm-box">
+        <p id="confirm-text"></p>
+        <button id="confirm-yes">Да, удалить</button>
+        <button id="confirm-no">Нет</button>
+      </div>
+    </div>
+
+    <script src="/static/konva.min.js"></script>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

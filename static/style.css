@@ -1,0 +1,101 @@
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  font: 15px system-ui, Arial, sans-serif;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+button {
+  min-height: 38px;
+  padding: 6px 10px;
+  background: #fff;
+  border: 1px solid #c3ccd8;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#toolbar,
+#delete-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-bottom: 1px solid #d5dce5;
+}
+
+#delete-bar {
+  background: #fdecea;
+}
+
+#delete-info {
+  margin-right: auto;
+}
+
+#status {
+  margin-left: auto;
+  color: #5d6b7c;
+}
+
+#stage {
+  flex: 1;
+  min-height: 0;
+  background: #fbfcfe;
+  touch-action: none;
+}
+
+#editor {
+  position: absolute;
+  padding: 4px;
+  border: 2px solid #2f6fde;
+  border-radius: 6px;
+  font: inherit;
+  text-align: center;
+  resize: none;
+}
+
+#confirm {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 40%);
+}
+
+#confirm-box {
+  max-width: 360px;
+  padding: 16px;
+  background: #fff;
+  border-radius: 10px;
+}
+
+#confirm-box p {
+  margin-top: 0;
+}
+
+#confirm-yes {
+  background: #c0352b;
+  border-color: #c0352b;
+  color: #fff;
+}
