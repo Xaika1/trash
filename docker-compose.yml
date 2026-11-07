@@ -2,14 +2,11 @@ services:
   db:
     image: postgres:17-alpine
     restart: always
-    environment:
-      POSTGRES_USER: flow
-      POSTGRES_PASSWORD: flow
-      POSTGRES_DB: flow
+    env_file: 1.env
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U flow -d flow"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -17,8 +14,7 @@ services:
   app:
     build: .
     restart: always
-    environment:
-      DATABASE_URL: postgresql://flow:flow@db:5432/flow
+    env_file: 1.env
     depends_on:
       db:
         condition: service_healthy
@@ -26,8 +22,7 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: always
-    environment:
-      DOMAIN: ${DOMAIN:-localhost}
+    env_file: 1.env
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
