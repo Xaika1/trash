@@ -43,6 +43,7 @@ create table if not exists edges (
     to_block bigint not null references blocks (id) on delete cascade,
     from_side smallint not null,
     to_side smallint not null,
+    label text not null default '',
     unique (from_block, from_side, to_block, to_side)
 );
 
@@ -140,14 +141,27 @@ async def add_block(canvas_id, block_type, coordinates, text):
     return await pool.fetchrow(query, canvas_id, block_type, coordinates, text)
 
 
-async def move_block(canvas_id, block_id, coordinates):
-    query = "update blocks set coordinates = $3 where id = $2 and canvas_id = $1 returning *"
-    return await pool.fetchrow(query, canvas_id, block_id, coordinates)
+async def get_block(canvas_id, block_id):
+    return await pool.fetchrow("select * from blocks where id = $2 and canvas_id = $1", canvas_id, block_id)
 
 
-async def rename_block(canvas_id, block_id, text):
-    query = "update blocks set text = $3 where id = $2 and canvas_id = $1 returning *"
-    return await pool.fetchrow(query, canvas_id, block_id, text)
+async def update_block(canvas_id, block_id, block_type, coordinates, text):
+    query = """
+        update blocks set type = $3, coordinates = $4, text = $5
+        where id = $2 and canvas_id = $1
+        returning *
+    """
+    return await pool.fetchrow(query, canvas_id, block_id, block_type, coordinates, text)
+
+
+async def restore_block(block):
+    query = """
+        insert into blocks (id, canvas_id, type, coordinates, text)
+        overriding system value
+        values ($1, $2, $3, $4, $5)
+        returning *
+    """
+    return await pool.fetchrow(query, block["id"], block["canvas_id"], block["type"], block["coordinates"], block["text"])
 
 
 async def delete_block(canvas_id, block_id):
@@ -163,6 +177,41 @@ async def add_edge(canvas_id, from_block, from_side, to_block, to_side):
         returning *
     """
     return await pool.fetchrow(query, canvas_id, from_block, from_side, to_block, to_side)
+
+
+async def get_edge(canvas_id, edge_id):
+    return await pool.fetchrow("select * from edges where id = $2 and canvas_id = $1", canvas_id, edge_id)
+
+
+async def get_block_edges(canvas_id, block_id):
+    query = "select * from edges where canvas_id = $1 and (from_block = $2 or to_block = $2)"
+    return await pool.fetch(query, canvas_id, block_id)
+
+
+async def set_label(canvas_id, edge_id, label):
+    query = "update edges set label = $3 where id = $2 and canvas_id = $1 returning *"
+    return await pool.fetchrow(query, canvas_id, edge_id, label)
+
+
+async def restore_edge(edge):
+    query = """
+        insert into edges (id, canvas_id, from_block, from_side, to_block, to_side, label)
+        overriding system value
+        select $1, $2, $3, $4, $5, $6, $7
+        where (select count(*) from blocks where canvas_id = $2 and id in ($3, $5)) = 2
+        on conflict do nothing
+        returning *
+    """
+    return await pool.fetchrow(
+        query,
+        edge["id"],
+        edge["canvas_id"],
+        edge["from_block"],
+        edge["from_side"],
+        edge["to_block"],
+        edge["to_side"],
+        edge["label"],
+    )
 
 
 async def delete_edge(canvas_id, edge_id):

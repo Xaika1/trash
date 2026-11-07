@@ -5,9 +5,16 @@ const BLOCK_NAMES = {
   4: "Данные",
 };
 
-const GRAY = "#47566a";
-const BLUE = "#2f6fde";
-const RED = "#c0352b";
+const INK = "#2b2b2b";
+const ORANGE = "#ff7a1a";
+const RED = "#d93a2b";
+
+const BLOCK_COLORS = {
+  1: { top: "#ffb26b", bottom: "#ff7a1a", border: "#c95200", text: "#1a1a1a" },
+  2: { top: "#ffffff", bottom: "#e4e4e4", border: "#4a4a4a", text: "#1a1a1a" },
+  3: { top: "#ffe08a", bottom: "#f5b82e", border: "#a97800", text: "#1a1a1a" },
+  4: { top: "#b5ece6", bottom: "#4cc2b8", border: "#12756e", text: "#0d2b28" },
+};
 const SIDES = [0, 1, 2, 3];
 
 const stageBox = document.getElementById("stage");
@@ -18,18 +25,29 @@ const deleteInfo = document.getElementById("delete-info");
 const deleteNext = document.getElementById("delete-next");
 const confirmWindow = document.getElementById("confirm");
 const confirmText = document.getElementById("confirm-text");
-const toolbar = document.getElementById("toolbar");
+const editTools = document.getElementById("edit-tools");
+const zoomValue = document.getElementById("zoom-value");
+const toast = document.getElementById("toast");
 const titleText = document.getElementById("title");
 const roleText = document.getElementById("role");
 const sharePanel = document.getElementById("share");
 const accessSelect = document.getElementById("access");
 const closedWindow = document.getElementById("closed");
 const closedText = document.getElementById("closed-text");
+const typeSelect = document.getElementById("block-type");
+const peopleButton = document.getElementById("people-button");
+const peopleList = document.getElementById("people-list");
 
 const ROLE_NAMES = {
   owner: "Вы владелец",
   edit: "Можно редактировать",
   view: "Только просмотр",
+};
+
+const PEOPLE_ROLES = {
+  owner: "владелец",
+  edit: "редактирует",
+  view: "смотрит",
 };
 
 const stage = new Konva.Stage({
@@ -41,7 +59,8 @@ const stage = new Konva.Stage({
 
 const edgeLayer = new Konva.Layer();
 const blockLayer = new Konva.Layer();
-stage.add(edgeLayer, blockLayer);
+const frameLayer = new Konva.Layer();
+stage.add(edgeLayer, blockLayer, frameLayer);
 
 const blocks = new Map();
 const edges = new Map();
@@ -55,11 +74,14 @@ let canEdit = false;
 let closed = false;
 let selectedBlock = null;
 let selectedEdge = null;
-let editingBlock = null;
+let editing = null;
+let toastTimer = null;
 let deleteMode = false;
 let newLine = null;
 let linkStart = null;
 let lastMoveTime = 0;
+let frame = null;
+let frameUsed = false;
 
 function send(message) {
   if (socket && socket.readyState === WebSocket.OPEN) {
@@ -80,6 +102,7 @@ function connect() {
   socket.onopen = () => {
     clearCanvas();
     statusText.textContent = "Подключено";
+    statusText.classList.remove("offline");
   };
 
   socket.onmessage = (event) => {
@@ -96,6 +119,7 @@ function connect() {
       return;
     }
     statusText.textContent = "Нет связи, переподключаемся…";
+    statusText.classList.add("offline");
     setTimeout(connect, 2000);
   };
 }
@@ -110,6 +134,14 @@ function handleMessage(message) {
 
   if (command === "C") {
     showClosed(parts.slice(1).join(";"));
+  }
+
+  if (command === "W") {
+    showMessage(parts.slice(1).join(";"));
+  }
+
+  if (command === "P") {
+    showPeople(parts.slice(1).join(";"));
   }
 
   if (command === "N") {
@@ -139,6 +171,7 @@ function handleMessage(message) {
       fromSide: Number(parts[3]),
       to: Number(parts[4]),
       toSide: Number(parts[5]),
+      label: parts.slice(6).join(";"),
     });
   }
 
@@ -169,7 +202,7 @@ function handleInfo(name, value) {
 function setRole(role) {
   canEdit = role !== "view";
   roleText.textContent = ROLE_NAMES[role];
-  toolbar.hidden = !canEdit;
+  editTools.hidden = !canEdit;
   sharePanel.hidden = role !== "owner";
 
   if (!canEdit) {
@@ -184,6 +217,38 @@ function setRole(role) {
     block.group.draggable(canEdit && !deleteMode);
   }
   stage.size({ width: stageBox.clientWidth, height: stageBox.clientHeight });
+}
+
+function showMessage(text, keep = false) {
+  toast.textContent = text;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  if (!keep) {
+    toastTimer = setTimeout(hideMessage, 3000);
+  }
+}
+
+function hideMessage() {
+  toast.hidden = true;
+}
+
+function showPeople(text) {
+  const people = text ? text.split(",") : [];
+  const word = document.createElement("span");
+  word.className = "word";
+  word.textContent = "Участники: ";
+  peopleButton.replaceChildren(word, String(people.length));
+  peopleList.innerHTML = "";
+
+  for (const person of people) {
+    const [login, role] = person.split(":");
+    const item = document.createElement("li");
+    const roleText = document.createElement("span");
+    item.textContent = `${login} `;
+    roleText.textContent = PEOPLE_ROLES[role];
+    item.append(roleText);
+    peopleList.append(item);
+  }
 }
 
 function showClosed(reason) {
@@ -202,7 +267,16 @@ function clearCanvas() {
 }
 
 function makeShape(block) {
-  const style = { fill: "#fff", stroke: GRAY, strokeWidth: 2, name: "shape" };
+  const colors = BLOCK_COLORS[block.type];
+  const style = {
+    name: "shape",
+    stroke: colors.border,
+    strokeWidth: 2,
+    fillLinearGradientStartPoint: { x: 0, y: 0 },
+    fillLinearGradientEndPoint: { x: 0, y: block.h },
+    fillLinearGradientColorStops: [0, colors.top, 1, colors.bottom],
+    perfectDrawEnabled: false,
+  };
 
   if (block.type === 3) {
     const points = [block.w / 2, 0, block.w, block.h / 2, block.w / 2, block.h, 0, block.h / 2];
@@ -230,7 +304,7 @@ function getSkew(block) {
 function drawBlock(data) {
   const oldBlock = blocks.get(data.id);
   if (oldBlock) {
-    if (oldBlock.group.isDragging() || editingBlock === data.id) {
+    if (oldBlock.group.isDragging() || (editing && editing.id === data.id && editing.kind === "block")) {
       return;
     }
     oldBlock.group.destroy();
@@ -249,7 +323,8 @@ function drawBlock(data) {
       height: block.h - 8,
       text: block.text,
       fontSize: 14,
-      fill: "#1c2430",
+      fill: BLOCK_COLORS[block.type].text,
+      fontStyle: "500",
       align: "center",
       verticalAlign: "middle",
       listening: false,
@@ -289,18 +364,19 @@ function paintBlock(block) {
   if (blocksToDelete.has(block.id)) {
     shape.stroke(RED).strokeWidth(4);
   } else if (selectedBlock === block.id) {
-    shape.stroke(BLUE).strokeWidth(2);
+    shape.stroke(ORANGE).strokeWidth(3);
+    typeSelect.value = block.type;
   } else {
-    shape.stroke(GRAY).strokeWidth(2);
+    shape.stroke(BLOCK_COLORS[block.type].border).strokeWidth(2);
   }
 }
 
 function paintEdge(edge) {
-  let color = GRAY;
+  let color = INK;
   if (edgesToDelete.has(edge.id)) {
     color = RED;
   } else if (selectedEdge === edge.id) {
-    color = BLUE;
+    color = ORANGE;
   }
   edge.arrow.stroke(color).fill(color);
 }
@@ -333,7 +409,7 @@ function addControls(block) {
     y: block.h - 8,
     width: 16,
     height: 16,
-    fill: BLUE,
+    fill: ORANGE,
     cornerRadius: 3,
     draggable: true,
   });
@@ -358,7 +434,7 @@ function addControls(block) {
       y,
       radius: 7,
       fill: "#fff",
-      stroke: BLUE,
+      stroke: ORANGE,
       strokeWidth: 2,
       hitStrokeWidth: 16,
     });
@@ -433,8 +509,8 @@ function startLine(block, side) {
 
   const arrow = new Konva.Arrow({
     points: [startX, startY, startX, startY],
-    stroke: BLUE,
-    fill: BLUE,
+    stroke: ORANGE,
+    fill: ORANGE,
     strokeWidth: 2,
     dash: [6, 4],
     pointerLength: 10,
@@ -470,7 +546,7 @@ function finishLine(event) {
   const point = getPointer(event);
   if (Math.hypot(point.x - startX, point.y - startY) < 6) {
     linkStart = { id: block.id, side };
-    statusText.textContent = "Нажмите на блок, с которым соединить";
+    showMessage("Нажмите на блок, с которым соединить", true);
     return;
   }
 
@@ -492,11 +568,11 @@ function finishLink(event) {
   }
 
   linkStart = null;
-  statusText.textContent = "Подключено";
+  hideMessage();
 }
 
 function clickBlock(id) {
-  if (!canEdit) {
+  if (!canEdit || frameUsed) {
     return;
   }
   if (deleteMode) {
@@ -511,10 +587,11 @@ function clickBlock(id) {
   const block = blocks.get(id);
   paintBlock(block);
   addControls(block);
+  typeSelect.hidden = false;
 }
 
 function clickEdge(id) {
-  if (!canEdit) {
+  if (!canEdit || frameUsed) {
     return;
   }
   if (deleteMode) {
@@ -542,6 +619,7 @@ function clearSelection() {
   const edge = edges.get(selectedEdge);
   selectedBlock = null;
   selectedEdge = null;
+  typeSelect.hidden = true;
 
   if (block) {
     paintBlock(block);
@@ -567,6 +645,7 @@ function removeBlock(id) {
 
   if (selectedBlock === id) {
     selectedBlock = null;
+    typeSelect.hidden = true;
   }
   blocksToDelete.delete(id);
   updateDeleteBar();
@@ -584,11 +663,34 @@ function getEdgePoints(edge) {
   return [from.group.x() + startX, from.group.y() + startY, to.group.x() + endX, to.group.y() + endY];
 }
 
+function getMiddle(points) {
+  return { x: (points[0] + points[2]) / 2, y: (points[1] + points[3]) / 2 };
+}
+
+function placeLabel(edge, points) {
+  const middle = getMiddle(points);
+  edge.label.position({ x: middle.x - edge.label.width() / 2, y: middle.y - edge.label.height() / 2 });
+  edge.label.visible(edge.text !== "");
+}
+
 function drawEdge(edge) {
+  const oldEdge = edges.get(edge.id);
+  if (oldEdge) {
+    oldEdge.text = edge.label;
+    oldEdge.label.getText().text(edge.label);
+    placeLabel(oldEdge, oldEdge.arrow.points());
+    return;
+  }
+
+  edge.text = edge.label;
+  edge.label = new Konva.Label({ listening: false });
+  edge.label.add(new Konva.Tag({ fill: "#fff", stroke: "#dcdcdc", cornerRadius: 6 }));
+  edge.label.add(new Konva.Text({ text: edge.text, fontSize: 13, padding: 4, fill: "#1a1a1a" }));
+
   edge.arrow = new Konva.Arrow({
     points: getEdgePoints(edge) ?? [0, 0, 0, 0],
-    stroke: GRAY,
-    fill: GRAY,
+    stroke: INK,
+    fill: INK,
     strokeWidth: 2,
     hitStrokeWidth: 16,
     pointerLength: 10,
@@ -600,14 +702,22 @@ function drawEdge(edge) {
     clickEdge(edge.id);
   });
 
+  edge.arrow.on("dblclick dbltap", () => {
+    if (canEdit && !deleteMode) {
+      startEditingEdge(edge.id);
+    }
+  });
+
   edges.set(edge.id, edge);
-  edgeLayer.add(edge.arrow);
+  edgeLayer.add(edge.arrow, edge.label);
+  placeLabel(edge, edge.arrow.points());
 }
 
 function removeEdge(id) {
   const edge = edges.get(id);
   if (edge) {
     edge.arrow.destroy();
+    edge.label.destroy();
     edges.delete(id);
   }
 
@@ -624,35 +734,129 @@ function updateEdges(blockId) {
       const points = getEdgePoints(edge);
       if (points) {
         edge.arrow.points(points);
+        placeLabel(edge, points);
       }
     }
   }
 }
 
-function startEditing(id) {
-  const block = blocks.get(id);
+function openEditor(x, y, width, height, value) {
   const box = stageBox.getBoundingClientRect();
   const scale = stage.scaleX();
 
-  editingBlock = id;
-  editor.value = block.text;
+  editor.value = value;
   editor.hidden = false;
-  editor.style.left = `${box.left + stage.x() + block.group.x() * scale}px`;
-  editor.style.top = `${box.top + stage.y() + block.group.y() * scale}px`;
-  editor.style.width = `${block.w * scale}px`;
-  editor.style.height = `${block.h * scale}px`;
+  editor.style.left = `${box.left + stage.x() + x * scale}px`;
+  editor.style.top = `${box.top + stage.y() + y * scale}px`;
+  editor.style.width = `${width * scale}px`;
+  editor.style.height = `${height * scale}px`;
   editor.focus();
 }
 
+function startEditing(id) {
+  const block = blocks.get(id);
+  editing = { kind: "block", id };
+  editor.maxLength = 1000;
+  openEditor(block.group.x(), block.group.y(), block.w, block.h, block.text);
+}
+
+function startEditingEdge(id) {
+  const edge = edges.get(id);
+  const middle = getMiddle(edge.arrow.points());
+  editing = { kind: "edge", id };
+  editor.maxLength = 200;
+  openEditor(middle.x - 80, middle.y - 18, 160, 36, edge.text);
+}
+
 function finishEditing() {
-  if (editingBlock === null) {
+  if (editing === null) {
     return;
   }
 
-  const id = editingBlock;
-  editingBlock = null;
+  const { kind, id } = editing;
+  editing = null;
   editor.hidden = true;
-  send(`T;${id};${editor.value.replace(/\n/g, " ")}`);
+  const text = editor.value.replace(/\n/g, " ");
+  send(kind === "block" ? `T;${id};${text}` : `G;${id};${text}`);
+}
+
+function undo() {
+  if (canEdit && !deleteMode) {
+    send("Z");
+  }
+}
+
+function getBounds() {
+  const list = [...blocks.values()];
+  const left = Math.min(...list.map((block) => block.group.x()));
+  const top = Math.min(...list.map((block) => block.group.y()));
+  const right = Math.max(...list.map((block) => block.group.x() + block.w));
+  const bottom = Math.max(...list.map((block) => block.group.y() + block.h));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
+function makePicture() {
+  clearSelection();
+  const padding = 30;
+  const bounds = getBounds();
+  const oldScale = stage.scaleX();
+  const oldPosition = stage.position();
+
+  stage.scale({ x: 1, y: 1 });
+  stage.position({ x: padding - bounds.x, y: padding - bounds.y });
+  const picture = stage.toCanvas({
+    x: 0,
+    y: 0,
+    width: bounds.width + padding * 2,
+    height: bounds.height + padding * 2,
+    pixelRatio: 2,
+  });
+  stage.scale({ x: oldScale, y: oldScale });
+  stage.position(oldPosition);
+
+  const result = document.createElement("canvas");
+  result.width = picture.width;
+  result.height = picture.height;
+  const context = result.getContext("2d");
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, result.width, result.height);
+  context.drawImage(picture, 0, 0);
+  return result;
+}
+
+function getFileName() {
+  const name = titleText.textContent.replace(/[\\/:*?"<>|]/g, "_").trim();
+  return name || "схема";
+}
+
+function exportPng() {
+  if (blocks.size === 0) {
+    showMessage("Холст пустой");
+    return;
+  }
+
+  const link = document.createElement("a");
+  link.download = `${getFileName()}.png`;
+  link.href = makePicture().toDataURL("image/png");
+  link.click();
+}
+
+function exportPdf() {
+  if (blocks.size === 0) {
+    showMessage("Холст пустой");
+    return;
+  }
+
+  const picture = makePicture();
+  const width = picture.width / 2;
+  const height = picture.height / 2;
+  const pdf = new jspdf.jsPDF({
+    orientation: width > height ? "landscape" : "portrait",
+    unit: "px",
+    format: [width, height],
+  });
+  pdf.addImage(picture.toDataURL("image/png"), "PNG", 0, 0, width, height);
+  pdf.save(`${getFileName()}.pdf`);
 }
 
 function startDeleteMode() {
@@ -663,6 +867,7 @@ function startDeleteMode() {
   clearSelection();
   deleteMode = true;
   deleteBar.hidden = false;
+  stage.draggable(false);
   stage.size({ width: stageBox.clientWidth, height: stageBox.clientHeight });
 
   for (const block of blocks.values()) {
@@ -673,6 +878,9 @@ function startDeleteMode() {
 
 function stopDeleteMode() {
   deleteMode = false;
+  stage.draggable(true);
+  frame?.rect.destroy();
+  frame = null;
   blocksToDelete.clear();
   edgesToDelete.clear();
   deleteBar.hidden = true;
@@ -690,8 +898,111 @@ function stopDeleteMode() {
 
 function updateDeleteBar() {
   const total = blocksToDelete.size + edgesToDelete.size;
-  deleteInfo.textContent = `Выберите, что удалить. Выбрано: ${total}`;
+  deleteInfo.textContent = `Нажмите или обведите рамкой то, что удалить. Выбрано: ${total}`;
   deleteNext.disabled = total === 0;
+}
+
+function startFrame() {
+  if (!deleteMode) {
+    return;
+  }
+
+  frameUsed = false;
+  const point = stage.getRelativePointerPosition();
+  const rect = new Konva.Rect({
+    x: point.x,
+    y: point.y,
+    width: 0,
+    height: 0,
+    stroke: RED,
+    strokeWidth: 1,
+    dash: [6, 4],
+    fill: "rgba(192, 53, 43, 0.08)",
+    listening: false,
+  });
+
+  frameLayer.add(rect);
+  frame = { rect, startX: point.x, startY: point.y };
+}
+
+function moveFrame() {
+  if (!frame) {
+    return;
+  }
+
+  const point = stage.getRelativePointerPosition();
+  frame.rect.position({ x: Math.min(frame.startX, point.x), y: Math.min(frame.startY, point.y) });
+  frame.rect.size({ width: Math.abs(point.x - frame.startX), height: Math.abs(point.y - frame.startY) });
+}
+
+function isInside(area, x, y) {
+  return x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height;
+}
+
+function touchesArea(block, area) {
+  const x = block.group.x();
+  const y = block.group.y();
+  return x < area.x + area.width && x + block.w > area.x && y < area.y + area.height && y + block.h > area.y;
+}
+
+function finishFrame() {
+  if (!frame) {
+    return;
+  }
+
+  const area = {
+    x: frame.rect.x(),
+    y: frame.rect.y(),
+    width: frame.rect.width(),
+    height: frame.rect.height(),
+  };
+  frame.rect.destroy();
+  frame = null;
+
+  if (area.width < 6 && area.height < 6) {
+    return;
+  }
+  frameUsed = true;
+  setTimeout(() => {
+    frameUsed = false;
+  }, 0);
+
+  const blockIds = [...blocks.values()].filter((block) => touchesArea(block, area)).map((block) => block.id);
+  const edgeIds = [...edges.values()]
+    .filter((edge) => {
+      const points = getEdgePoints(edge);
+      if (!points) {
+        return false;
+      }
+      const middle = getMiddle(points);
+      return isInside(area, middle.x, middle.y);
+    })
+    .map((edge) => edge.id);
+
+  const allSelected =
+    blockIds.length + edgeIds.length > 0 &&
+    blockIds.every((id) => blocksToDelete.has(id)) &&
+    edgeIds.every((id) => edgesToDelete.has(id));
+
+  for (const id of blockIds) {
+    if (allSelected) {
+      blocksToDelete.delete(id);
+    } else {
+      blocksToDelete.add(id);
+    }
+    paintBlock(blocks.get(id));
+  }
+
+  for (const id of edgeIds) {
+    if (allSelected) {
+      edgesToDelete.delete(id);
+    } else {
+      edgesToDelete.add(id);
+    }
+    paintEdge(edges.get(id));
+  }
+
+  updateDeleteBar();
 }
 
 function askConfirmation() {
@@ -704,13 +1015,38 @@ function askConfirmation() {
 }
 
 function deleteSelected() {
-  for (const id of edgesToDelete) {
-    send(`D;${id}`);
-  }
-  for (const id of blocksToDelete) {
-    send(`X;${id}`);
-  }
+  const blockIds = [...blocksToDelete].join(",");
+  const edgeIds = [...edgesToDelete].join(",");
+  send(`K;${blockIds};${edgeIds}`);
   stopDeleteMode();
+}
+
+function showZoom() {
+  zoomValue.textContent = `${Math.round(stage.scaleX() * 100)}%`;
+}
+
+function fitAll() {
+  if (blocks.size === 0) {
+    return;
+  }
+
+  const bounds = getBounds();
+  const scale = Math.min(
+    2,
+    Math.max(0.2, Math.min((stage.width() - 80) / bounds.width, (stage.height() - 80) / bounds.height)),
+  );
+  stage.scale({ x: scale, y: scale });
+  stage.position({
+    x: (stage.width() - bounds.width * scale) / 2 - bounds.x * scale,
+    y: (stage.height() - bounds.height * scale) / 2 - bounds.y * scale,
+  });
+  showZoom();
+}
+
+function closePanels() {
+  document.querySelectorAll(".panel").forEach((panel) => {
+    panel.hidden = true;
+  });
 }
 
 function zoom(factor, x, y) {
@@ -721,6 +1057,7 @@ function zoom(factor, x, y) {
 
   stage.scale({ x: newScale, y: newScale });
   stage.position({ x: x - pointX * newScale, y: y - pointY * newScale });
+  showZoom();
 }
 
 function addBlock(type) {
@@ -741,6 +1078,42 @@ document.querySelectorAll("[data-type]").forEach((button) => {
 });
 
 document.getElementById("delete").addEventListener("click", startDeleteMode);
+document.getElementById("undo").addEventListener("click", undo);
+document.getElementById("fit").addEventListener("click", fitAll);
+
+document.getElementById("export-png").addEventListener("click", () => {
+  closePanels();
+  exportPng();
+});
+
+document.getElementById("export-pdf").addEventListener("click", () => {
+  closePanels();
+  exportPdf();
+});
+
+document.querySelectorAll("[data-panel]").forEach((button) => {
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const panel = document.getElementById(button.dataset.panel);
+    const wasHidden = panel.hidden;
+    closePanels();
+    panel.hidden = !wasHidden;
+  });
+});
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".menu")) {
+    closePanels();
+  }
+});
+
+typeSelect.addEventListener("change", () => {
+  if (selectedBlock !== null) {
+    send(`Y;${selectedBlock};${typeSelect.value}`);
+  }
+});
+
+
 document.getElementById("delete-cancel").addEventListener("click", stopDeleteMode);
 document.getElementById("confirm-yes").addEventListener("click", deleteSelected);
 deleteNext.addEventListener("click", askConfirmation);
@@ -758,9 +1131,10 @@ accessSelect.addEventListener("change", async () => {
 });
 
 document.getElementById("copy").addEventListener("click", async () => {
+  closePanels();
   if (navigator.clipboard) {
     await navigator.clipboard.writeText(shareLink);
-    statusText.textContent = "Ссылка скопирована";
+    showMessage("Ссылка скопирована");
   } else {
     prompt("Скопируйте ссылку", shareLink);
   }
@@ -779,6 +1153,10 @@ stage.on("click tap", (event) => {
     clearSelection();
   }
 });
+
+stage.on("mousedown touchstart", startFrame);
+stage.on("mousemove touchmove", moveFrame);
+stage.on("mouseup touchend", finishFrame);
 
 stage.on("wheel", (event) => {
   event.evt.preventDefault();
@@ -805,10 +1183,15 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && deleteMode) {
     stopDeleteMode();
   }
+  if ((event.ctrlKey || event.metaKey) && event.code === "KeyZ") {
+    event.preventDefault();
+    undo();
+  }
 });
 
 window.addEventListener("pointermove", moveLine);
 window.addEventListener("pointerup", finishLine);
+window.addEventListener("pointerup", finishFrame);
 
 window.addEventListener("resize", () => {
   stage.size({ width: stageBox.clientWidth, height: stageBox.clientHeight });

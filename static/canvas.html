@@ -8,29 +8,66 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <div id="topbar">
-      <a href="/" id="back">← Мои холсты</a>
-      <strong id="title"></strong>
-      <span id="role"></span>
-      <span id="share" hidden>
-        <select id="access">
-          <option value="0">Ссылка закрыта</option>
-          <option value="1">По ссылке: только смотреть</option>
-          <option value="2">По ссылке: редактировать</option>
-        </select>
-        <button id="copy">Копировать ссылку</button>
-      </span>
-      <button id="zoom-out">−</button>
-      <button id="zoom-in">+</button>
+    <header id="topbar">
+      <a href="/" id="back" title="Мои холсты">←</a>
+      <div id="heading">
+        <strong id="title"></strong>
+        <span id="role"></span>
+      </div>
       <span id="status">Подключение…</span>
-    </div>
 
-    <div id="toolbar" hidden>
-      <button data-type="1">Начало/конец</button>
-      <button data-type="2">Процесс</button>
-      <button data-type="3">Решение</button>
-      <button data-type="4">Данные</button>
-      <button id="delete">Удалить</button>
+      <div class="menu">
+        <button id="people-button" data-panel="people-list"><span class="word">Участники: </span>0</button>
+        <ul id="people-list" class="panel" hidden></ul>
+      </div>
+
+      <div class="menu" id="share" hidden>
+        <button id="share-button" data-panel="share-panel">Поделиться</button>
+        <div id="share-panel" class="panel" hidden>
+          <label>
+            Доступ по ссылке
+            <select id="access">
+              <option value="0">Закрыт</option>
+              <option value="1">Только смотреть</option>
+              <option value="2">Редактировать</option>
+            </select>
+          </label>
+          <button id="copy">Копировать ссылку</button>
+        </div>
+      </div>
+
+      <div class="menu">
+        <button id="export-button" data-panel="export-panel">Скачать</button>
+        <div id="export-panel" class="panel" hidden>
+          <button id="export-png">Картинка PNG</button>
+          <button id="export-pdf">Документ PDF</button>
+        </div>
+      </div>
+    </header>
+
+    <div id="toolbar">
+      <div id="edit-tools" class="group" hidden>
+        <button data-type="1" title="Начало/конец"><span>Начало/конец</span></button>
+        <button data-type="2" title="Процесс"><span>Процесс</span></button>
+        <button data-type="3" title="Решение"><span>Решение</span></button>
+        <button data-type="4" title="Данные"><span>Данные</span></button>
+        <span class="divider"></span>
+        <button id="undo" title="Откатить (Ctrl+Z)">↶ <span>Откатить</span></button>
+        <button id="delete" title="Удалить (Delete)">✕ <span>Удалить</span></button>
+        <select id="block-type" hidden title="Вид блока">
+          <option value="1">Начало/конец</option>
+          <option value="2">Процесс</option>
+          <option value="3">Решение</option>
+          <option value="4">Данные</option>
+        </select>
+      </div>
+
+      <div class="group zoom">
+        <button id="zoom-out" title="Отдалить">−</button>
+        <span id="zoom-value">100%</span>
+        <button id="zoom-in" title="Приблизить">+</button>
+        <button id="fit" title="Показать всю схему">Вся схема</button>
+      </div>
     </div>
 
     <div id="delete-bar" hidden>
@@ -40,6 +77,7 @@
     </div>
 
     <div id="stage"></div>
+    <div id="toast" hidden></div>
     <textarea id="editor" maxlength="1000" hidden></textarea>
 
     <div id="closed" hidden>
@@ -58,6 +96,7 @@
     </div>
 
     <script src="/static/konva.min.js"></script>
+    <script src="/static/jspdf.min.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>

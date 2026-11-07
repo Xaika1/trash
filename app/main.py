@@ -1,4 +1,3 @@
-import asyncio
 from contextlib import asynccontextmanager
 
 import asyncpg
@@ -7,18 +6,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import auth, db
-
-MAX_BLOCKS = 2000
-MAX_TEXT = 1000
-MAX_ID = 2**62
-MAX_COORD = 1_000_000
-
-CLOSED = 0
-VIEW = 1
-EDIT = 2
-
-rooms = {}
+from app import auth, db, editor
+from app.editor import CLOSED, block_line, edge_line, role_of
 
 
 class Account(BaseModel):
@@ -86,7 +75,7 @@ async def register(data: Account, request: Request, response: Response):
     user = await db.add_user(data.login, await auth.hash_password(data.password))
     if not user:
         raise HTTPException(409, "Такой логин уже занят")
-    await auth.start_session(response, user["id"])
+    await auth.start_session(request, response, user["id"])
     return {"login": user["login"]}
 
 
@@ -97,7 +86,7 @@ async def login(data: Account, request: Request, response: Response):
     user = await db.get_user_by_login(data.login)
     if not user or not await auth.verify_password(data.password, user["password_hash"]):
         raise HTTPException(401, "Неверный логин или пароль")
-    await auth.start_session(response, user["id"])
+    await auth.start_session(request, response, user["id"])
     return {"login": user["login"]}
 
 
@@ -144,10 +133,10 @@ async def change_canvas(canvas_id: int, data: CanvasData, user=Depends(auth.curr
     canvas = await own_canvas(canvas_id, user)
     if data.title is not None:
         canvas = await db.rename_canvas(canvas_id, data.title)
-        await send_room(canvas_id, f"I;title;{canvas['title']}")
+        await editor.send_room(canvas_id, f"I;title;{canvas['title']}")
     if data.access is not None:
         canvas = await db.set_access(canvas_id, data.access)
-        await apply_access(canvas_id, data.access)
+        await editor.apply_access(canvas_id, data.access)
     return canvas_info(canvas)
 
 
@@ -155,153 +144,8 @@ async def change_canvas(canvas_id: int, data: CanvasData, user=Depends(auth.curr
 async def remove_canvas(canvas_id: int, user=Depends(auth.current_user)):
     await own_canvas(canvas_id, user)
     await db.delete_canvas(canvas_id)
-    await close_room(canvas_id, "Холст удалён")
+    await editor.close_room(canvas_id, "Холст удалён")
     return {"status": "ok"}
-
-
-def to_int(value, low, high):
-    number = int(value)
-    if not low <= number <= high:
-        raise ValueError
-    return number
-
-
-def to_id(value):
-    return to_int(value, 1, MAX_ID)
-
-
-def to_side(value):
-    return to_int(value, 0, 3)
-
-
-def to_coordinates(x, y, width, height):
-    x = to_int(x, -MAX_COORD, MAX_COORD)
-    y = to_int(y, -MAX_COORD, MAX_COORD)
-    width = to_int(width, 20, 5000)
-    height = to_int(height, 20, 5000)
-    return f"{x};{y};{width};{height}"
-
-
-def block_line(block):
-    return f"N;{block['id']};{block['type']};{block['coordinates']};{block['text']}"
-
-
-def edge_line(edge):
-    sides = f"{edge['from_block']};{edge['from_side']};{edge['to_block']};{edge['to_side']}"
-    return f"E;{edge['id']};{sides}"
-
-
-def role_of(owner, access):
-    if owner:
-        return "owner"
-    return "edit" if access == EDIT else "view"
-
-
-async def send_to(canvas_id, socket, line):
-    try:
-        await asyncio.wait_for(socket.send_text(line), 5)
-    except Exception:
-        rooms.get(canvas_id, {}).pop(socket, None)
-
-
-async def send_room(canvas_id, line, skip=None):
-    members = rooms.get(canvas_id, {})
-    targets = [socket for socket in members if socket is not skip]
-    await asyncio.gather(*(send_to(canvas_id, socket, line) for socket in targets))
-
-
-async def apply_access(canvas_id, access):
-    for socket, member in list(rooms.get(canvas_id, {}).items()):
-        if member["role"] == "owner":
-            continue
-        if access == CLOSED:
-            await send_to(canvas_id, socket, "C;Владелец закрыл доступ")
-            await socket.close(4403)
-        else:
-            member["role"] = role_of(False, access)
-            await send_to(canvas_id, socket, f"I;role;{member['role']}")
-
-
-async def close_room(canvas_id, reason):
-    for socket in list(rooms.get(canvas_id, {})):
-        await send_to(canvas_id, socket, f"C;{reason}")
-        await socket.close(4404)
-    rooms.pop(canvas_id, None)
-
-
-async def create_block(canvas_id, line):
-    _, block_type, x, y, width, height, text = line.split(";", 6)
-    if len(text) > MAX_TEXT or await db.count_blocks(canvas_id) >= MAX_BLOCKS:
-        return
-    coordinates = to_coordinates(x, y, width, height)
-    block = await db.add_block(canvas_id, to_int(block_type, 1, 4), coordinates, text)
-    await send_room(canvas_id, block_line(block))
-
-
-async def drag_block(canvas_id, line, sender):
-    _, block_id, x, y = line.split(";")
-    x = to_int(x, -MAX_COORD, MAX_COORD)
-    y = to_int(y, -MAX_COORD, MAX_COORD)
-    await send_room(canvas_id, f"M;{to_id(block_id)};{x};{y}", skip=sender)
-
-
-async def place_block(canvas_id, line):
-    _, block_id, x, y, width, height = line.split(";")
-    block = await db.move_block(canvas_id, to_id(block_id), to_coordinates(x, y, width, height))
-    if block:
-        await send_room(canvas_id, block_line(block))
-
-
-async def rename_block(canvas_id, line):
-    _, block_id, text = line.split(";", 2)
-    if len(text) > MAX_TEXT:
-        return
-    block = await db.rename_block(canvas_id, to_id(block_id), text)
-    if block:
-        await send_room(canvas_id, block_line(block))
-
-
-async def remove_block(canvas_id, line):
-    _, block_id = line.split(";")
-    block_id = to_id(block_id)
-    await db.delete_block(canvas_id, block_id)
-    await send_room(canvas_id, f"X;{block_id}")
-
-
-async def create_edge(canvas_id, line):
-    _, from_block, from_side, to_block, to_side_value = line.split(";")
-    from_block = to_id(from_block)
-    to_block = to_id(to_block)
-    if from_block == to_block:
-        return
-    edge = await db.add_edge(canvas_id, from_block, to_side(from_side), to_block, to_side(to_side_value))
-    if edge:
-        await send_room(canvas_id, edge_line(edge))
-
-
-async def remove_edge(canvas_id, line):
-    _, edge_id = line.split(";")
-    edge_id = to_id(edge_id)
-    await db.delete_edge(canvas_id, edge_id)
-    await send_room(canvas_id, f"D;{edge_id}")
-
-
-async def handle(canvas_id, line, sender):
-    command = line[:1]
-    if command == "A":
-        await create_block(canvas_id, line)
-    elif command == "M":
-        await drag_block(canvas_id, line, sender)
-    elif command == "F":
-        await place_block(canvas_id, line)
-    elif command == "T":
-        await rename_block(canvas_id, line)
-    elif command == "X":
-        await remove_block(canvas_id, line)
-    elif command == "E":
-        await create_edge(canvas_id, line)
-    elif command == "D":
-        await remove_edge(canvas_id, line)
 
 
 async def open_canvas(user, canvas_id, code):
@@ -342,7 +186,7 @@ async def websocket(socket: WebSocket):
         return
 
     canvas_id = canvas["id"]
-    member = {"role": role_of(owner, canvas["access"])}
+    member = {"role": role_of(owner, canvas["access"]), "user_id": user["id"], "login": user["login"]}
     await socket.send_text(f"I;title;{canvas['title']}")
     await socket.send_text(f"I;role;{member['role']}")
     await socket.send_text(f"I;id;{canvas_id}")
@@ -355,19 +199,17 @@ async def websocket(socket: WebSocket):
     for edge in await db.get_edges(canvas_id):
         await socket.send_text(edge_line(edge))
 
-    rooms.setdefault(canvas_id, {})[socket] = member
+    await editor.join(canvas_id, socket, member)
     try:
         while True:
             line = await socket.receive_text()
             if member["role"] == "view":
                 continue
             try:
-                await handle(canvas_id, line, socket)
-            except (ValueError, asyncpg.ForeignKeyViolationError):
+                await editor.handle(canvas_id, line, member, socket)
+            except (ValueError, asyncpg.ForeignKeyViolationError, asyncpg.UniqueViolationError):
                 pass
     except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
-        rooms.get(canvas_id, {}).pop(socket, None)
-        if not rooms.get(canvas_id):
-            rooms.pop(canvas_id, None)
+        await editor.leave(canvas_id, socket)

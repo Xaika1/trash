@@ -65,10 +65,11 @@ def too_many_attempts(ip):
     return False
 
 
-async def start_session(response, user_id):
+async def start_session(request, response, user_id):
     token = secrets.token_urlsafe(32)
     await db.add_session(token_hash(token), user_id, SESSION_DAYS)
-    response.set_cookie(COOKIE, token, max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax")
+    secure = request.headers.get("x-forwarded-proto") == "https"
+    response.set_cookie(COOKIE, token, max_age=SESSION_DAYS * 86400, httponly=True, samesite="lax", secure=secure)
 
 
 async def end_session(request, response):
